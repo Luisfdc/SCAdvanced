@@ -17,7 +17,7 @@ A solução foi projetada com foco em **modularidade e reutilização**, separan
 ---
 
 ## ⚙️ Arquitetura
-
+```
 SCAdvanced
 │
 ├── SCAdvanced.Core
@@ -32,7 +32,7 @@ SCAdvanced
 │
 └── SCAdvanced.ConsoleApp
 └── Program.cs → Exemplo prático de uso (autoatendimento)
-
+```
 
 ---
 
