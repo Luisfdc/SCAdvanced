@@ -15,7 +15,10 @@ namespace SCAdvanced.Service
         private Note? _escrowNote;              
         private PaymentOptions _opts = new();
         private decimal _targetTotal = 0m;
-
+        private byte[]? _lastRawData;
+        private bool _awaitingPostConfirm = false;  
+        private bool _escrowCycleActive = false;   
+        private DateTime _squelchUntilUtc = DateTime.MinValue;
         public PaymentOrchestrator(IBillAcceptorPort port) => _port = port;
 
         public event EventHandler<NoteEventArgs>? Escrow;
@@ -53,18 +56,63 @@ namespace SCAdvanced.Service
             {
                 var pkt = (_port as BillAcceptorAdapter)!.Poll();
 
-                if (pkt.MessageType == EbdsMessageType.Type7_Extended &&
-                    BillAcceptorAdapter.TryParseExtendedNoteBRL(pkt.Data, out var note))
+
+                if (_awaitingPostConfirm)
                 {
-                    _escrowNote = note;                 
-                    Escrow?.Invoke(this, new NoteEventArgs(note));
-                    return note;
+                    if (pkt.MessageType == EbdsMessageType.Type2_OmnibusReply)
+                    {
+
+                        _awaitingPostConfirm = false;
+                        _escrowCycleActive = false;
+                        _escrowNote = null;
+                        _squelchUntilUtc = DateTime.UtcNow.AddMilliseconds(600); 
+                    }
+                    Thread.Sleep(120);
+                    continue;
+                }
+
+                if (DateTime.UtcNow < _squelchUntilUtc)
+                {
+                    if (pkt.MessageType == EbdsMessageType.Type2_OmnibusReply)
+                    {
+                        _squelchUntilUtc = DateTime.MinValue;
+                        _escrowCycleActive = false;
+                        _escrowNote = null;
+                    }
+                    Thread.Sleep(120);
+                    continue;
+                }
+
+
+                if (pkt.MessageType == EbdsMessageType.Type7_Extended)
+                {
+                    if (_escrowCycleActive)
+                    {
+                        Thread.Sleep(120);
+                        continue;
+                    }
+
+                    if (BillAcceptorAdapter.TryParseExtendedNoteBRL(pkt.Data, out var note))
+                    {
+                        _escrowNote = note;
+                        _escrowCycleActive = true;
+                        Escrow?.Invoke(this, new NoteEventArgs(note));
+                        return note;
+                    }
+                }
+
+                if (pkt.MessageType == EbdsMessageType.Type2_OmnibusReply)
+                {
+                    _escrowCycleActive = false;
+                    _escrowNote = null;
                 }
 
                 Thread.Sleep(160);
             }
             return null;
         }
+
+
 
         /// <summary>
         /// Decide o que fazer com a nota em ESCROW.
@@ -74,12 +122,17 @@ namespace SCAdvanced.Service
         {
             if (_escrowNote == null)
                 return new NoteProcessResult { Status = NoteProcessStatus.Error, ErrorCode = "NO_ESCROW", Message = "Não há nota em escrow." };
-
+            
+            _awaitingPostConfirm = true;    
+            
             if (decision == EscrowDecision.Accept)
             {
                 _port.Stack();
 
                 var res = WaitForPostCommandConfirm(accept: true, confirmTimeoutMs, ct);
+                //_awaitingPostConfirm = false;    
+                _squelchUntilUtc = DateTime.UtcNow.AddMilliseconds(600);
+                _escrowCycleActive = false;      
                 if (res.Status == NoteProcessStatus.Accepted)
                 {
                     var n = _escrowNote.Value;

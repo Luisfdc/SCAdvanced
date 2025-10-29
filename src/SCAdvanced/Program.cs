@@ -23,7 +23,7 @@ void TestePagamento()
     };
 
     orchestrator.StartOperation(total, opts);
-    Console.WriteLine("Insira cédulas. Use teclas: A=aceitar, R=devolver, C=confirmar, X=cancelar.");
+    Console.WriteLine("Insira cédulas. Use teclas: A=aceitar, R=devolver, F=Finalizar");
 
     while (true)
     {
@@ -33,6 +33,7 @@ void TestePagamento()
         {
             Console.WriteLine($"> Nota detectada: BRL {note.Value:N2}. (A)citar ou (R)etornar?");
             ConsoleKey key;
+
             do { key = Console.ReadKey(true).Key; } while (key != ConsoleKey.A && key != ConsoleKey.R);
 
             var decision = key == ConsoleKey.A ? EscrowDecision.Accept : EscrowDecision.Return;
@@ -45,20 +46,14 @@ void TestePagamento()
         if (Console.KeyAvailable)
         {
             var k = Console.ReadKey(true).Key;
-            if (k == ConsoleKey.C)
+            if (k == ConsoleKey.F)
             {
                 var res = orchestrator.ConfirmOperation();
                 Console.WriteLine($"\nCONFIRMADO. Pago: {res.AmountPaid:N2}");
-                if (res.ChangeDue > 0) Console.WriteLine($"Troco: {res.ChangeDue:N2}");
-                break;
-            }
-            if (k == ConsoleKey.X)
-            {
-                var res = orchestrator.CancelOperation();
-                Console.WriteLine($"\nCANCELADO. Reembolso devido: {res.RefundDue:N2}");
                 break;
             }
         }
+        Thread.Sleep(1000);
     }
 
 
